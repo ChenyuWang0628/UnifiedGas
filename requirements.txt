@@ -1,0 +1,10 @@
+# Core dependencies for UnifiedGas.
+# The code is tested with Python 3.10-3.13 on Linux and macOS, CPU and CUDA.
+# Version floors reflect the APIs actually used; newer releases work as well.
+
+torch>=1.13
+numpy>=1.23
+scipy>=1.9
+scikit-learn>=1.1
+pandas>=1.5
+matplotlib>=3.6

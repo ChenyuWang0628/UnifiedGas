@@ -1,0 +1,37 @@
+# Datasets are downloaded from UCI, never committed (see docs/DATA.md).
+# Exclude the contents rather than the directory itself, otherwise git never
+# descends into it and the .gitkeep placeholder is unreachable.
+data/*
+!data/.gitkeep
+
+# Exception: the 100 KB Dataset B steady-state features are committed, because
+# they are the subject of the cross-board verification and are small enough to
+# ship. They are derived from the UCI recordings by scripts/preprocess_datasetB.py,
+# not a redistribution of the raw data.
+!data/DataSetB/
+!data/DataSetB/*.csv
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.ipynb_checkpoints/
+
+# Run artifacts
+logs/
+*.log
+results/
+
+# Generated figures, except the PCA score plots committed for reference
+figures/*.png
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Tooling caches
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/

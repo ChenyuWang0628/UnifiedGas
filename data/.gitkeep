@@ -1,0 +1,5 @@
+Place the downloaded datasets here; see ../docs/DATA.md.
+
+    data/DataSetA/   batch1.dat ... batch10.dat      (UCI Gas Sensor Array Drift)
+    data/DataSetB/   batch1.csv ... batch5.csv       (produced by scripts/preprocess_datasetB.py)
+    data/DataSetB-raw/  B*_G*_F*_R*.txt              (raw UCI Twin Gas Sensor Arrays)
