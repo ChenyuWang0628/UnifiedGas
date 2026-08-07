@@ -3,7 +3,13 @@
 Reference implementation accompanying the IEEE Sensors Journal submission.
 """
 
-from .models import GasClassifier, SimpleCNN1D, SimpleCNN2D, build_backbone
+from .models import (
+    GasClassifier,
+    SensorTransformerBackbone,
+    SimpleCNN1D,
+    SimpleCNN2D,
+    build_backbone,
+)
 from .losses import (
     mk_mmd, hierarchical_mk_mmd, coral_loss, multi_level_cls_loss, alignment_weight,
 )
@@ -17,7 +23,8 @@ from .data import (
 __version__ = "1.0.0"
 
 __all__ = [
-    "GasClassifier", "SimpleCNN1D", "SimpleCNN2D", "build_backbone",
+    "GasClassifier", "SensorTransformerBackbone", "SimpleCNN1D",
+    "SimpleCNN2D", "build_backbone",
     "mk_mmd", "hierarchical_mk_mmd", "coral_loss", "multi_level_cls_loss",
     "alignment_weight",
     "TrainConfig", "UnifiedGasTrainer", "set_seed",

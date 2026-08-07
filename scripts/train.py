@@ -65,6 +65,8 @@ def main():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     ap.add_argument("--dataset", default="A", choices=["A", "B"])
+    ap.add_argument("--backbone", default="cnn", choices=["cnn", "transformer"],
+                    help="feature encoder; transformer is the TMSCA-size Dataset-A diagnostic")
     ap.add_argument("--data_dir", default=None,
                     help="defaults to data/DataSetA or data/DataSetB")
     ap.add_argument("--source", type=int, required=True, help="source batch / board")
@@ -93,7 +95,11 @@ def main():
     seeds = [int(s) for s in args.seeds.split(",")]
     num_classes = 6 if dataset == "A" else 4
 
-    print(f"UnifiedGas | Dataset {dataset} | batch/board {args.source} -> {args.target}")
+    if args.backbone == "transformer" and dataset != "A":
+        ap.error("--backbone transformer is defined for Dataset A only")
+
+    print(f"UnifiedGas ({args.backbone}) | Dataset {dataset} | "
+          f"batch/board {args.source} -> {args.target}")
     print(f"  data      : {data_dir}")
     print(f"  device    : {device}")
     print(f"  epochs    : {args.epochs}   seeds: {seeds}")
@@ -106,6 +112,7 @@ def main():
         epochs=args.epochs, batch_size=args.batch_size, lr=args.lr,
         lambda_coral=args.lambda_coral, lambda_center=args.lambda_center,
         warmup_frac=args.warmup_frac, num_classes=num_classes, dataset=dataset,
+        backbone=args.backbone,
     )
 
     results = []
@@ -121,7 +128,8 @@ def main():
               f"final={res['final_acc'] * 100:.2f}%  ({res['wall_time_s']}s)")
         if args.save_checkpoint and i == 0:
             p = trainer.save_checkpoint(args.save_checkpoint, extra={
-                "dataset": dataset, "source": args.source, "target": args.target,
+                "dataset": dataset, "backbone": args.backbone,
+                "source": args.source, "target": args.target,
                 "seed": seed, "best_acc": res["best_acc"],
                 "num_classes": num_classes,
                 # Recorded so that predict.py applies the same input protocol;
@@ -139,7 +147,8 @@ def main():
     best = [r["best_acc"] for r in results]
     final = [r["final_acc"] for r in results]
     summary = {
-        "dataset": dataset, "source": args.source, "target": args.target,
+        "dataset": dataset, "backbone": args.backbone,
+        "source": args.source, "target": args.target,
         "epochs": args.epochs, "seeds": seeds,
         "best_acc_mean": float(np.mean(best)), "best_acc_std": float(np.std(best)),
         "final_acc_mean": float(np.mean(final)),

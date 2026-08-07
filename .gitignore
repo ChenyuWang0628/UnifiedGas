@@ -22,7 +22,11 @@ venv/
 # Run artifacts
 logs/
 *.log
-results/
+results/*
+!results/transformer_experiment/
+results/transformer_experiment/*
+!results/transformer_experiment/.gitkeep
+!results/transformer_experiment/*.json
 
 # Generated figures, except the PCA score plots committed for reference
 figures/*.png

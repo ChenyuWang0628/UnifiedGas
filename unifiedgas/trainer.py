@@ -2,8 +2,8 @@
 
 Everything -- feature extraction, hierarchical MK-MMD and CORAL alignment,
 the dual-level center regularizer, and the fused classification heads -- is
-optimized by one optimizer under one alignment-weight schedule.  There is no
-separate pretraining stage and no manually specified phase transition.
+optimized in one run by one optimizer under a predefined warmup/ramp schedule.
+There is no separately optimized pretraining and fine-tuning pipeline.
 """
 
 from __future__ import annotations
@@ -58,6 +58,7 @@ class TrainConfig:
     sigmas: tuple = DEFAULT_SIGMAS
     num_classes: int = 6
     dataset: str = "A"
+    backbone: str = "cnn"
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -80,6 +81,7 @@ class UnifiedGasTrainer:
             use_center_loss=True,
             dataset=self.cfg.dataset,
             fusion_w1=self.cfg.fusion_w1,
+            backbone=self.cfg.backbone,
         ).to(self.device)
 
     @torch.no_grad()
@@ -100,8 +102,9 @@ class UnifiedGasTrainer:
         """Run the full single-stage training loop.
 
         Returns the best and final target accuracy along with the epoch at
-        which the best value occurred.  Target labels are used only to compute
-        the reported accuracy -- never in any gradient.
+        which the best value occurred. Target labels are evaluated after every
+        epoch for the paper's retrospective oracle reporting rule; they never
+        enter a gradient update.
         """
         set_seed(seed)
         cfg = self.cfg

@@ -149,6 +149,19 @@ Useful options: `--lambda_coral` (CORAL weight, default 1.0), `--lambda_center`
 alignment switches on, default 0.25), `--norm` (normalization protocol for
 Dataset B), `--device`.
 
+An experimental capacity-matched Transformer backbone is available on the
+`experiment/unifiedgas-transformer` branch. It uses the published TMSCA encoder
+dimensions (16 sensor tokens, width 128, six layers, four heads, FFN width 256)
+but does not reproduce TMSCA's prior-attention, decoder, k-NN LMMD, or ALR-CCA
+components. The fixed smoke protocol compares source-only and UnifiedGas on
+Batch 1 -> {6, 8, 9} without per-task tuning:
+
+```bash
+python scripts/run_transformer_smoke.py --data_dir data/DataSetA \
+    --targets 6,8,9 --epochs 400 --seed 42 --device cuda \
+    --out results/transformer_experiment/smoke.json
+```
+
 Target labels never enter a gradient or a hyperparameter search. They are
 evaluated at the end of every epoch solely to record which epoch to report:
 following the retrospective oracle-selection protocol applied uniformly to

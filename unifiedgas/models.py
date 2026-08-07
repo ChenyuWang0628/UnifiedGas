@@ -27,6 +27,7 @@ import torch.nn.functional as F
 __all__ = [
     "SimpleCNN1D",
     "SimpleCNN2D",
+    "SensorTransformerBackbone",
     "MultiLevelFC",
     "GasClassifier",
     "build_backbone",
@@ -81,11 +82,79 @@ class SimpleCNN1D(nn.Module):
         return self.conv_blocks(x).view(x.size(0), -1)
 
 
-def build_backbone(dataset: str, in_channels: int = 1) -> nn.Module:
-    """Return the backbone matching a dataset tag ('A' or 'B')."""
-    if dataset.upper() == "A":
+class SensorTransformerBackbone(nn.Module):
+    """Transformer encoder over the 16 sensor tokens of Dataset A.
+
+    The dimensions match the architecture reported for TMSCA: input size 128,
+    model width 128, six encoder layers, four attention heads, and a 256-unit
+    feed-forward block. Each sensor contributes one token containing its eight
+    engineered response features; attention therefore operates within each
+    sample and never mixes samples from a minibatch.
+
+    This is a capacity-matched diagnostic backbone, not a TMSCA
+    re-implementation: it intentionally excludes TMSCA's cross-domain prior
+    attention, decoder, k-NN LMMD, and ALR-CCA components.
+    """
+
+    def __init__(self, input_dim: int = 8, d_model: int = 128,
+                 nhead: int = 4, num_layers: int = 6,
+                 dim_feedforward: int = 256, dropout: float = 0.1,
+                 num_sensors: int = 16):
+        super().__init__()
+        self.num_sensors = num_sensors
+        self.input_dim = input_dim
+        self.input_projection = nn.Linear(input_dim, d_model)
+        self.position_embedding = nn.Parameter(
+            torch.zeros(1, num_sensors, d_model)
+        )
+        layer = nn.TransformerEncoderLayer(
+            d_model=d_model,
+            nhead=nhead,
+            dim_feedforward=dim_feedforward,
+            dropout=dropout,
+            activation="gelu",
+            batch_first=True,
+            norm_first=True,
+        )
+        self.encoder = nn.TransformerEncoder(
+            layer,
+            num_layers=num_layers,
+            norm=nn.LayerNorm(d_model),
+            enable_nested_tensor=False,
+        )
+        self.output_projection = nn.Linear(d_model, 256)
+        self.feature_dim = 256
+        nn.init.normal_(self.position_embedding, mean=0.0, std=0.02)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if x.dim() == 4:
+            x = x.squeeze(1)
+        elif x.dim() == 2:
+            x = x.view(x.size(0), self.num_sensors, self.input_dim)
+        if x.dim() != 3 or x.shape[1:] != (self.num_sensors, self.input_dim):
+            raise ValueError(
+                "Transformer backbone expects (B, 1, 16, 8), (B, 16, 8), "
+                f"or (B, 128); got {tuple(x.shape)}"
+            )
+        tokens = self.input_projection(x) + self.position_embedding
+        encoded = self.encoder(tokens)
+        return self.output_projection(encoded.mean(dim=1))
+
+
+def build_backbone(dataset: str, in_channels: int = 1,
+                   backbone: str = "cnn", dropout_rate: float = 0.1) -> nn.Module:
+    """Return the requested backbone for a dataset tag ('A' or 'B')."""
+    backbone = backbone.lower()
+    dataset = dataset.upper()
+    if backbone == "transformer":
+        if dataset != "A":
+            raise ValueError("the capacity-matched Transformer is defined for Dataset A only")
+        return SensorTransformerBackbone(dropout=dropout_rate)
+    if backbone != "cnn":
+        raise ValueError(f"backbone must be 'cnn' or 'transformer', got {backbone!r}")
+    if dataset == "A":
         return SimpleCNN2D(in_channels)
-    if dataset.upper() == "B":
+    if dataset == "B":
         return SimpleCNN1D(in_channels)
     raise ValueError(f"dataset must be 'A' or 'B', got {dataset!r}")
 
@@ -121,15 +190,20 @@ class GasClassifier(nn.Module):
 
     def __init__(self, num_classes: int = 6, dropout_rate: float = 0.1,
                  use_center_loss: bool = True, dataset: str = "A",
-                 fusion_w1: float = 0.6):
+                 fusion_w1: float = 0.6, backbone: str = "cnn"):
         super().__init__()
         self.num_classes = num_classes
         self.use_center_loss = use_center_loss
         self.dataset = dataset.upper()
+        self.backbone_name = backbone.lower()
         self.fusion_w1 = fusion_w1
         self.fusion_w2 = 1.0 - fusion_w1
 
-        self.cnn = build_backbone(self.dataset)
+        self.cnn = build_backbone(
+            self.dataset,
+            backbone=self.backbone_name,
+            dropout_rate=dropout_rate,
+        )
         self.fc_dims = [128, 64]
         self.fc = MultiLevelFC(self.cnn.feature_dim, self.fc_dims, dropout_rate)
         self.classifier1 = nn.Linear(self.fc_dims[0], num_classes)
