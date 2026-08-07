@@ -21,8 +21,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import multiprocessing as mp
 import sys
 import time
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import asdict
 from itertools import cycle
 from pathlib import Path
@@ -178,6 +180,33 @@ def run_task(method: str, source_x: torch.Tensor, source_y: torch.Tensor,
     return result
 
 
+def run_task_process(method: str, source: int, target: int,
+                     data_dir: str, config_dict: dict, seed: int,
+                     gpu_index: int, verbose: bool) -> tuple[str, dict]:
+    """Load one task and run it on one dedicated GPU process."""
+    torch.cuda.set_device(gpu_index)
+    device = torch.device(f"cuda:{gpu_index}")
+    source_x, source_y = load_dataset_a_batch(
+        Path(data_dir) / f"batch{source}.dat"
+    )
+    target_x, target_y = load_dataset_a_batch(
+        Path(data_dir) / f"batch{target}.dat"
+    )
+    config = TrainConfig(**config_dict)
+    result = run_task(
+        method,
+        source_x,
+        source_y,
+        target_x,
+        target_y,
+        config,
+        device,
+        seed,
+        verbose=verbose,
+    )
+    return f"B{source}->B{target}|{method}", result
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Capacity-matched Transformer smoke experiment",
@@ -196,6 +225,11 @@ def main() -> None:
     parser.add_argument("--lambda_center", type=float, default=0.1)
     parser.add_argument("--methods", default="source_only,unifiedgas")
     parser.add_argument("--device", default=None)
+    parser.add_argument(
+        "--parallel_gpus",
+        action="store_true",
+        help="run each method/target pair in a dedicated CUDA process",
+    )
     parser.add_argument(
         "--out",
         default="results/transformer_experiment/smoke.json",
@@ -250,9 +284,6 @@ def main() -> None:
     print(f"  parameters : {parameter_count:,} ({parameter_count / 1e6:.3f} M)")
     print(f"  latency    : {latency['per_sample_latency_ms']:.4f} ms/sample")
 
-    source_x, source_y = load_dataset_a_batch(
-        data_dir / f"batch{args.source}.dat"
-    )
     results: dict = {
         "experiment": "tmsca_size_transformer_smoke",
         "architecture": {
@@ -273,9 +304,54 @@ def main() -> None:
         "results": {},
     }
 
-    for target in targets:
-        target_x, target_y = load_dataset_a_batch(data_dir / f"batch{target}.dat")
-        for method in methods:
+    jobs = [(target, method) for target in targets for method in methods]
+    if args.parallel_gpus:
+        if device.type != "cuda":
+            parser.error("--parallel_gpus requires CUDA")
+        available_gpus = torch.cuda.device_count()
+        if available_gpus < len(jobs):
+            parser.error(
+                f"--parallel_gpus needs {len(jobs)} GPUs, but only "
+                f"{available_gpus} are visible"
+            )
+        print(f"  parallel   : {len(jobs)} tasks on {available_gpus} visible GPUs")
+        context = mp.get_context("spawn")
+        with ProcessPoolExecutor(
+            max_workers=len(jobs),
+            mp_context=context,
+        ) as executor:
+            futures = {
+                executor.submit(
+                    run_task_process,
+                    method,
+                    args.source,
+                    target,
+                    str(data_dir),
+                    asdict(config),
+                    args.seed,
+                    gpu_index,
+                    not args.quiet,
+                ): (target, method)
+                for gpu_index, (target, method) in enumerate(jobs)
+            }
+            for future in as_completed(futures):
+                key, result = future.result()
+                results["results"][key] = result
+                print(
+                    f"[{key}] best={result['best_acc'] * 100:.2f}% "
+                    f"@ep{result['best_epoch']}  "
+                    f"final={result['final_acc'] * 100:.2f}%  "
+                    f"wall={result['wall_time_s']:.1f}s",
+                    flush=True,
+                )
+    else:
+        source_x, source_y = load_dataset_a_batch(
+            data_dir / f"batch{args.source}.dat"
+        )
+        for target, method in jobs:
+            target_x, target_y = load_dataset_a_batch(
+                data_dir / f"batch{target}.dat"
+            )
             print(f"\n[{method}] Batch {args.source} -> Batch {target}")
             result = run_task(
                 method,
